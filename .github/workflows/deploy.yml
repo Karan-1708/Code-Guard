@@ -1,0 +1,130 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CodeGuard — CI/CD Deployment Pipeline
+# File: .github/workflows/deploy.yml
+#
+# Triggers on every push to main. Deploys both the Lambda backend and the
+# Next.js static frontend. Infrastructure (Terraform) is NOT run here —
+# it stays a manual step to prevent accidental resource destruction.
+#
+# Authentication: AWS OIDC — no long-lived access keys stored in GitHub.
+# The workflow assumes an IAM role provisioned by infra/github_oidc.tf.
+#
+# Required GitHub Actions variables (repo Settings → Secrets and variables →
+# Actions → Variables — these are not sensitive so Variables, not Secrets):
+#   AWS_ROLE_ARN          — from `terraform output github_actions_role_arn`
+#   AWS_REGION            — us-east-2
+#   LAMBDA_FUNCTION_NAME  — from `terraform output lambda_function_name`
+#   S3_BUCKET_NAME        — from `terraform output s3_bucket_name`
+#   CF_DISTRIBUTION_ID    — from `terraform output cloudfront_distribution_id`
+#   NEXT_PUBLIC_API_URL   — from `terraform output api_gateway_url`
+#
+# Required GitHub Actions secrets (Settings → Secrets and variables → Actions
+# → Secrets — these ARE sensitive):
+#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY — Clerk publishable key (pk_test_...)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy CodeGuard
+
+on:
+  push:
+    branches: [main]
+
+# Allow only one concurrent deployment. If a new push arrives while a deploy
+# is running, cancel the in-progress run and start fresh.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write   # Required for OIDC token request
+  contents: read    # Required to checkout the repository
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Configure AWS credentials via OIDC ────────────────────────────────
+      # No AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY needed.
+      # GitHub exchanges the OIDC token for temporary STS credentials.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region:     ${{ vars.AWS_REGION }}
+
+      # ── 3. Set up Python for Lambda packaging ────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ── 4. Build Lambda deployment package ───────────────────────────────────
+      # Mirrors the manual packaging steps from Part 2/3.
+      # pydantic-core must be installed with the manylinux2014_x86_64 platform
+      # flag so the Linux binary is used (not a local OS binary).
+      - name: Build Lambda package
+        run: |
+          pip install pydantic pydantic-core \
+            --platform manylinux2014_x86_64 \
+            --python-version 3.12 \
+            --only-binary=:all: \
+            --target ./package
+
+          pip install fastapi mangum boto3 fastapi-clerk-auth uvicorn \
+            --target ./package
+
+          cp server.py lambda_handler.py dynamo_memory.py secrets.py ./package/
+
+          cd package && zip -r ../codeguard.zip . && cd ..
+
+      # ── 5. Deploy Lambda function code ───────────────────────────────────────
+      # Updates the function code only — does not touch configuration or env vars.
+      - name: Deploy Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ vars.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://codeguard.zip \
+            --region ${{ vars.AWS_REGION }}
+
+      # ── 6. Set up Node.js for Next.js build ──────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # ── 7. Install Node dependencies ─────────────────────────────────────────
+      - name: Install Node dependencies
+        run: npm ci
+
+      # ── 8. Build Next.js static export ───────────────────────────────────────
+      # NEXT_PUBLIC_* variables must be present at build time (not runtime)
+      # because Next.js inlines them into the static JS bundle during export.
+      - name: Build Next.js static export
+        env:
+          NEXT_PUBLIC_API_URL:                ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:  ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: npm run build
+
+      # ── 9. Sync static export to S3 ──────────────────────────────────────────
+      # --delete removes files from S3 that are no longer in the build output.
+      - name: Sync frontend to S3
+        run: |
+          aws s3 sync ./out s3://${{ vars.S3_BUCKET_NAME }}/ \
+            --delete \
+            --region ${{ vars.AWS_REGION }}
+
+      # ── 10. Invalidate CloudFront cache ──────────────────────────────────────
+      # Without this, users would see the old cached version for up to 1 hour.
+      # /* invalidates every path in the distribution at once.
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ vars.CF_DISTRIBUTION_ID }} \
+            --paths "/*"

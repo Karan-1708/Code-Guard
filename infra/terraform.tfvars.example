@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CodeGuard — Terraform variable values
+#
+# Copy this file to terraform.tfvars and fill in the values.
+# terraform.tfvars is gitignored — never commit it.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+# ─────────────────────────────────────────────────────────────────────────────
+
+# AWS region — must match the region you deployed Part 2 resources in.
+aws_region = "us-east-2"
+
+# Clerk JWKS URL — find in Clerk Dashboard → Configure → API Keys → Advanced.
+# Format: https://<instance>.clerk.accounts.dev/.well-known/jwks.json
+clerk_jwks_url = "https://healthy-stallion-51.clerk.accounts.dev/.well-known/jwks.json"
+
+# Path to the pre-built Lambda ZIP (relative to the infra/ directory).
+# Build it before running terraform apply — see requirements.txt for commands.
+lambda_zip_path = "../codeguard.zip"
+
+# GitHub repository in owner/repo format — used to scope the OIDC trust policy.
+# Update this after pushing to GitHub, then run terraform apply again.
+# Example: github_repo = "karangill17/codeguard"
+github_repo = "YOUR_GITHUB_USERNAME/codeguard"
