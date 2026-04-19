@@ -26,8 +26,7 @@
 name: Deploy CodeGuard
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:   # manual trigger only — run from Actions tab when needed
 
 # Allow only one concurrent deployment. If a new push arrives while a deploy
 # is running, cancel the in-progress run and start fresh.

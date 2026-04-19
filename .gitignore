@@ -63,4 +63,6 @@ package/
 response.json
 
 # other
+AGENTS.md
+CLAUDE.md
 ignore/

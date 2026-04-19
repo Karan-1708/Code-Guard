@@ -1,10 +1,10 @@
-# CodeGuard — Python dependencies (AWS Lambda + Bedrock)
+# CodeGuard - Python dependencies (AWS Lambda + Bedrock)
 # ─────────────────────────────────────────────────────────────────────────────
 # To build the deployment package for Lambda (Linux x86_64):
 #
 # pip install --platform manylinux2014_x86_64 --target package/ --only-binary=:all: --upgrade -r requirements.txt
 # cp server.py,lambda_handler.py,dynamo_memory.py,secrets.py package/
-# Compress-Archive -Path package/* -DestinationPath codeguard-lambda.zip -Force
+# Compress-Archive -Path package/* -DestinationPath codeguard.zip -Force
 # ─────────────────────────────────────────────────────────────────────────────
 
 fastapi
@@ -16,4 +16,3 @@ pydantic-core
 python-multipart
 fastapi-clerk-auth
 python-dotenv
-openai
