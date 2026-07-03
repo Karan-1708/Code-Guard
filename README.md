@@ -1,8 +1,5 @@
 # CodeGuard — AI-Powered Security Code Review
 
-> Paste your code. Get an instant, severity-graded security review — complete with a corrected version and a plain-language briefing tailored to your experience level.
-
-**Live app:** https://dgk2fbvlux214.cloudfront.net  
 **Course:** AIE1018 — AI Deployment and MLOps | Cambrian College — Winter 2026  
 **Student:** Karan Gill
 
